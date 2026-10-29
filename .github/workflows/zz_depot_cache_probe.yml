@@ -101,3 +101,44 @@ jobs:
         with:
           path: probe
           key: depot-cache-probe-${{ github.run_id }}
+
+  # Depot runners pre-set GOCACHEPROG, so go reads and writes Depot's Go cache
+  # directly. A compile that `go build -x` does not run came from that cache.
+  gocache:
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: "false"
+
+      - name: Describe the Go cache
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          echo "event=${EVENT} ref=${REF} fork=${IS_FORK}"
+          go version
+          # The program and its arguments, with anything token-like redacted.
+          go env GOCACHEPROG | sed -E 's/[A-Za-z0-9_.-]{24,}/<redacted>/g'
+          for v in DEPOT_TOKEN DEPOT_CACHE_TOKEN; do echo "${v} set: $([ -n "${!v:-}" ] && echo yes || echo no)"; done
+
+      - name: Build the packages
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          case "${EVENT}:${REF}" in
+          push:refs/heads/arthur/gc-base-1) pkgs="basepkg" ;;
+          pull_request:*) pkgs="basepkg forkpkg" ;;
+          *) pkgs="basepkg forkpkg" ;;
+          esac
+          for p in ${pkgs}; do
+            if go build -trimpath -x "./${p}" 2>&1 | grep -q -- "-p example.com/probe/${p} "; then
+              echo "${p}: compiled here (cache miss)"
+            else
+              echo "${p}: from the cache (cache hit)"
+            fi
+          done
