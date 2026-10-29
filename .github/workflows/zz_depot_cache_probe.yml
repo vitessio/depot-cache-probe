@@ -52,6 +52,30 @@ jobs:
           echo "matched key: ${MATCHED:-<none>}"
           cat probe/marker 2>/dev/null || echo "no marker restored"
 
+      # Exact keys, so that restore order plays no part: one entry saved by a
+      # push to a branch of this repository, one saved by the fork pull request.
+      - name: Restore the base repository's entry (exact key)
+        id: base
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: base
+          key: depot-cache-probe-40949933294
+
+      - name: Restore the fork pull request's entry (exact key)
+        id: fork
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fork
+          key: depot-cache-probe-40946332371
+
+      - name: Show the exact-key results
+        env:
+          BASE_HIT: ${{ steps.base.outputs.cache-hit }}
+          FORK_HIT: ${{ steps.fork.outputs.cache-hit }}
+        run: |
+          echo "base entry hit=${BASE_HIT:-false}: $(cat base/probe/marker 2>/dev/null || cat base/marker 2>/dev/null || echo none)"
+          echo "fork entry hit=${FORK_HIT:-false}: $(cat fork/probe/marker 2>/dev/null || cat fork/marker 2>/dev/null || echo none)"
+
       - name: Write the marker
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/arthur/probe-save'
         env:
