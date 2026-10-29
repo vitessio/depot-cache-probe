@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   probe:
+    if: vars.PROBE_ALL == 'true'
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -105,6 +106,7 @@ jobs:
   # Depot runners pre-set GOCACHEPROG, so go reads and writes Depot's Go cache
   # directly. A compile that `go build -x` does not run came from that cache.
   gocache:
+    if: vars.PROBE_ALL == 'true'
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -146,6 +148,7 @@ jobs:
   # How does actions/cache reach Depot Cache? Hosts only; anything token-like
   # is redacted.
   cachediag:
+    if: vars.PROBE_ALL == 'true'
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -177,3 +180,48 @@ jobs:
           echo "--- listening"; sudo ss -ltnp 2>/dev/null | redact | cut -c1-160
           echo "--- nat"; sudo iptables -t nat -S 2>/dev/null | redact | head -20
           echo "--- runner dir"; for d in /home/runner/actions-runner /opt/actions-runner /actions-runner; do [ -d "$d" ] && { echo "$d"; ls -a "$d" | head -30; [ -f "$d/.env" ] && cut -d= -f1 "$d/.env"; }; done; true
+
+  # Workaround: point actions/cache back at GitHub's cache service, whose URLs
+  # Depot keeps in UPSTREAM_ACTIONS_*_URL.
+  override:
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Point the cache service URLs at GitHub
+        run: |
+          echo "ACTIONS_RESULTS_URL=${UPSTREAM_ACTIONS_RESULTS_URL}" >> "${GITHUB_ENV}"
+          echo "ACTIONS_CACHE_URL=${UPSTREAM_ACTIONS_CACHE_URL}" >> "${GITHUB_ENV}"
+
+      - name: Cache service URLs seen by JavaScript actions
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            for (const v of ["ACTIONS_RESULTS_URL", "ACTIONS_CACHE_URL", "UPSTREAM_ACTIONS_RESULTS_URL", "UPSTREAM_ACTIONS_CACHE_URL"]) {
+              let shown = process.env[v] || "";
+              try { shown = new URL(shown).origin; } catch (e) {}
+              core.info(`${v}=${shown}`);
+            }
+
+      - name: Write the marker
+        run: |
+          mkdir -p probe
+          echo "saved through the override at ${GITHUB_REF}, run ${GITHUB_RUN_ID}" > probe/marker
+
+      - name: Save the marker
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: probe
+          key: depot-override-${{ github.run_id }}
+
+      - name: Restore it again
+        id: restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: probe
+          key: depot-override-${{ github.run_id }}
+          lookup-only: true
+
+      - name: Show the lookup
+        env:
+          HIT: ${{ steps.restore.outputs.cache-hit }}
+        run: echo "lookup hit=${HIT:-false}"
