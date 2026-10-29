@@ -207,8 +207,24 @@ jobs:
           mkdir -p probe
           echo "saved through the override at ${GITHUB_REF}, run ${GITHUB_RUN_ID}" > probe/marker
 
+      - name: Cache service URLs seen with a step env
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ACTIONS_RESULTS_URL: https://results-receiver.actions.githubusercontent.com/
+          ACTIONS_CACHE_URL: https://artifactcache.actions.githubusercontent.com/
+        with:
+          script: |
+            for (const v of ["ACTIONS_RESULTS_URL", "ACTIONS_CACHE_URL"]) {
+              let shown = process.env[v] || "";
+              try { shown = new URL(shown).origin; } catch (e) {}
+              core.info(`step env: ${v}=${shown}`);
+            }
+
       - name: Save the marker
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          ACTIONS_RESULTS_URL: https://results-receiver.actions.githubusercontent.com/
+          ACTIONS_CACHE_URL: https://artifactcache.actions.githubusercontent.com/
         with:
           path: probe
           key: depot-override-${{ github.run_id }}
