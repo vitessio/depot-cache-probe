@@ -7,7 +7,7 @@ on:
   pull_request:
   push:
     branches:
-      - "arthur/depot-cache-probe-restore"
+      - "arthur/**"
 
 permissions:
   contents: read
@@ -53,15 +53,15 @@ jobs:
           cat probe/marker 2>/dev/null || echo "no marker restored"
 
       - name: Write the marker
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/arthur/probe-save'
         env:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           mkdir -p probe
-          echo "saved by ${GITHUB_EVENT_NAME} from ${HEAD_REPO} at ${GITHUB_REF}, run ${GITHUB_RUN_ID}" > probe/marker
+          echo "saved by ${GITHUB_EVENT_NAME} from ${HEAD_REPO:-${GITHUB_REPOSITORY}} at ${GITHUB_REF}, run ${GITHUB_RUN_ID}" > probe/marker
 
       - name: Save the marker
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/arthur/probe-save'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: probe
