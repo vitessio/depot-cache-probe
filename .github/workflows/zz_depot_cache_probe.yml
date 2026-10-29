@@ -142,3 +142,38 @@ jobs:
               echo "${p}: from the cache (cache hit)"
             fi
           done
+
+  # How does actions/cache reach Depot Cache? Hosts only; anything token-like
+  # is redacted.
+  cachediag:
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Cache service URLs seen by JavaScript actions
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            for (const v of ["ACTIONS_RESULTS_URL", "ACTIONS_CACHE_URL", "ACTIONS_CACHE_SERVICE_V2", "ACTIONS_RUNTIME_URL"]) {
+              const val = process.env[v] || "";
+              let shown = val;
+              try { shown = new URL(val).origin; } catch (e) {}
+              core.info(`${v}=${shown}`);
+            }
+            const tok = process.env.ACTIONS_RUNTIME_TOKEN || "";
+            const parts = tok.split(".");
+            if (parts.length === 3) {
+              const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+              core.info(`runtime token issuer=${claims.iss} ac=${claims.ac}`);
+            }
+            core.info(`env names with DEPOT/PROXY/CACHE: ${Object.keys(process.env).filter(k => /depot|proxy|cache/i.test(k)).join(" ")}`);
+
+      - name: Runner environment
+        run: |
+          redact() { sed -E 's/[A-Za-z0-9_+\/=.-]{32,}/<redacted>/g'; }
+          echo "--- env names"; env | cut -d= -f1 | grep -i -E 'depot|proxy|cache|actions_' | sort || true
+          echo "--- /etc/hosts"; grep -v -E '^\s*(#|$)' /etc/hosts | redact
+          echo "--- results host"; getent hosts results-receiver.actions.githubusercontent.com || true
+          echo "--- processes"; ps -eo user,comm,args | grep -i -E 'depot|proxy|cache|runner' | grep -v grep | redact | cut -c1-200
+          echo "--- listening"; sudo ss -ltnp 2>/dev/null | redact | cut -c1-160
+          echo "--- nat"; sudo iptables -t nat -S 2>/dev/null | redact | head -20
+          echo "--- runner dir"; for d in /home/runner/actions-runner /opt/actions-runner /actions-runner; do [ -d "$d" ] && { echo "$d"; ls -a "$d" | head -30; [ -f "$d/.env" ] && cut -d= -f1 "$d/.env"; }; done; true
